@@ -558,16 +558,52 @@ void validate_detector_recall(char *cfgfile, char *weightfile)
     }
 }
 
+void print_results(char *input, image im, int num, float thresh, detection *dets, char **names, image **alphabet, int classes)
+{
+    int i;
+    for(i = 0; i < num; ++i){
+        detection det = dets[i];
+        int class = max_index(det.prob, det.classes);
+        float prob = det.prob[class];
+        if(prob > thresh){
+            box b = det.bbox;
+            int left  = (b.x-b.w/2.)*im.w;
+            int right = (b.x+b.w/2.)*im.w;
+            int top   = (b.y-b.h/2.)*im.h;
+            int bot   = (b.y+b.h/2.)*im.h;
+
+            if(left < 0) left = 0;
+            if(right > im.w-1) right = im.w-1;
+            if(top < 0) top = 0;
+            if(bot > im.h-1) bot = im.h-1;
+
+            printf("{ \"filename\": \"%s\", \"class\": \"%s\", \"probability\": %f, \"left\": %d, \"top\": %d, \"right\": %d, \"bottom\": %d }\n",
+                input,
+                names[class],
+                prob,
+                left,
+                top,
+                right,
+                bot
+            );
+        }
+    }
+    printf("detection done:%s\n", input);
+}
 
 void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen)
 {
     list *options = read_data_cfg(datacfg);
     char *name_list = option_find_str(options, "names", "data/names.list");
     char **names = get_labels(name_list);
-
+    clock_t timecheck;
+    timecheck=clock();
     image **alphabet = load_alphabet();
     network *net = load_network(cfgfile, weightfile, 0);
     set_batch_network(net, 1);
+    
+    printf("Loaded network in %f seconds.\n", sec(clock()-timecheck));
+    
     srand(2222222);
     double time;
     char buff[256];
@@ -580,7 +616,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
             printf("Enter Image Path: ");
             fflush(stdout);
             input = fgets(input, 256, stdin);
-            if(!input) return;
+            if(!input) break;
             strtok(input, "\n");
         }
         image im = load_image_color(input,0,0);
@@ -601,18 +637,9 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         //printf("%d\n", nboxes);
         //if (nms) do_nms_obj(boxes, probs, l.w*l.h*l.n, l.classes, nms);
         if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
-        draw_detections(im, dets, nboxes, thresh, names, alphabet, l.classes);
-        free_detections(dets, nboxes);
-        if(outfile){
-            save_image(im, outfile);
-        }
-        else{
-            save_image(im, "predictions");
-#ifdef OPENCV
-            make_window("predictions", 512, 512, 0);
-            show_image(im, "predictions", 0);
-#endif
-        }
+        
+        printf("Results: \n");
+        print_results(input, im, nboxes, thresh, dets, names, alphabet, l.classes);
 
         free_image(im);
         free_image(sized);
